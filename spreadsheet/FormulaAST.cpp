@@ -72,7 +72,7 @@ public:
     virtual ~Expr() = default;
     virtual void Print(std::ostream& out) const = 0;
     virtual void DoPrintFormula(std::ostream& out, ExprPrecedence precedence) const = 0;
-    virtual double Evaluate(/*добавьте сюда нужные аргументы*/ args) const = 0;
+    virtual double Evaluate(std::function<CellInterface::Value(Position)> func) const = 0;
 
     // higher is tighter
     virtual ExprPrecedence GetPrecedence() const = 0;
@@ -142,8 +142,37 @@ public:
         }
     }
 
-    double Evaluate(/*добавьте нужные аргументы*/) const override {
-			// Скопируйте ваше решение из предыдущих уроков.
+// Реализуйте метод Evaluate() для бинарных операций.
+// При делении на 0 выбрасывайте ошибку вычисления FormulaError
+    double Evaluate(std::function<CellInterface::Value(Position)> func) const override {
+        switch (type_) {
+            case Add:
+                if (!std::isfinite(lhs_->Evaluate(func) + rhs_->Evaluate(func))) {
+                    throw FormulaError(FormulaError::Category::Arithmetic);
+                }
+                return lhs_->Evaluate(func) + rhs_->Evaluate(func);
+            case Subtract:
+                if (!std::isfinite(lhs_->Evaluate(func) - rhs_->Evaluate(func))) {
+                    throw FormulaError(FormulaError::Category::Arithmetic);
+                }
+                return lhs_->Evaluate(func) - rhs_->Evaluate(func);
+            case Multiply:
+                if (!std::isfinite(lhs_->Evaluate(func) * rhs_->Evaluate(func))) {
+                    throw FormulaError(FormulaError::Category::Arithmetic);
+                }
+                return lhs_->Evaluate(func) * rhs_->Evaluate(func);
+            case Divide:
+                if (rhs_->Evaluate(func) == 0) {
+                    throw FormulaError(FormulaError::Category::Arithmetic);
+                }
+                if (!std::isfinite(lhs_->Evaluate(func) / rhs_->Evaluate(func))) {
+                    throw FormulaError(FormulaError::Category::Arithmetic);
+                }
+                return lhs_->Evaluate(func) / rhs_->Evaluate(func);
+            default:
+                // have to do this because VC++ has a buggy warning
+                assert(false);
+        }
     }
 
 private:
@@ -180,13 +209,48 @@ public:
         return EP_UNARY;
     }
 
-    double Evaluate(/*добавьте нужные аргументы*/ args) const override {
-        // Скопируйте ваше решение из предыдущих уроков.
+// Реализуйте метод Evaluate() для унарных операций.
+    double Evaluate(std::function<CellInterface::Value(Position)> func) const override {
+        switch (type_) {
+            case UnaryPlus:
+                return operand_->Evaluate(func);
+            case UnaryMinus:
+                return operand_->Evaluate(func) * -1;
+            default:
+                assert(false);
+        }
     }
 
 private:
     Type type_;
     std::unique_ptr<Expr> operand_;
+};
+
+class NumberExpr final : public Expr {
+public:
+    explicit NumberExpr(double value)
+        : value_(value) {
+    }
+
+    void Print(std::ostream& out) const override {
+        out << value_;
+    }
+
+    void DoPrintFormula(std::ostream& out, ExprPrecedence /* precedence */) const override {
+        out << value_;
+    }
+
+    ExprPrecedence GetPrecedence() const override {
+        return EP_ATOM;
+    }
+
+// Для чисел метод возвращает значение числа.
+    double Evaluate(std::function<CellInterface::Value(Position)>) const override {
+        return value_;
+    }
+
+private:
+    double value_;
 };
 
 class CellExpr final : public Expr {
@@ -211,38 +275,20 @@ public:
         return EP_ATOM;
     }
 
-    double Evaluate(/*добавьте нужные аргументы*/ args) const override {
-        // реализуйте метод.
+    double Evaluate(std::function<CellInterface::Value(Position)> func) const override {
+        auto pos = *cell_;
+        if (!pos.IsValid()) {
+            throw FormulaError(FormulaError::Category::Ref);
+        }
+        auto val = func(pos);
+        if (!std::holds_alternative<double>(val)) {
+            throw FormulaError(FormulaError::Category::Value);
+        }
+        return std::get<double>(val);
     }
 
 private:
     const Position* cell_;
-};
-
-class NumberExpr final : public Expr {
-public:
-    explicit NumberExpr(double value)
-        : value_(value) {
-    }
-
-    void Print(std::ostream& out) const override {
-        out << value_;
-    }
-
-    void DoPrintFormula(std::ostream& out, ExprPrecedence /* precedence */) const override {
-        out << value_;
-    }
-
-    ExprPrecedence GetPrecedence() const override {
-        return EP_ATOM;
-    }
-
-    double Evaluate(/*добавьте нужные аргументы*/ args) const override {
-        return value_;
-    }
-
-private:
-    double value_;
 };
 
 class ParseASTListener final : public FormulaBaseListener {
@@ -374,7 +420,11 @@ FormulaAST ParseFormulaAST(std::istream& in) {
 
 FormulaAST ParseFormulaAST(const std::string& in_str) {
     std::istringstream in(in_str);
-    return ParseFormulaAST(in);
+    try {
+        return ParseFormulaAST(in);
+    } catch (const std::exception& exc) {
+        std::throw_with_nested(FormulaException(exc.what()));
+    }
 }
 
 void FormulaAST::PrintCells(std::ostream& out) const {
@@ -391,8 +441,8 @@ void FormulaAST::PrintFormula(std::ostream& out) const {
     root_expr_->PrintFormula(out, ASTImpl::EP_ATOM);
 }
 
-double FormulaAST::Execute(/*добавьте нужные аргументы*/ args) const {
-    return root_expr_->Evaluate(/*добавьте нужные аргументы*/ args);
+double FormulaAST::Execute(std::function<CellInterface::Value(Position)> func) const {
+    return root_expr_->Evaluate(func);
 }
 
 FormulaAST::FormulaAST(std::unique_ptr<ASTImpl::Expr> root_expr, std::forward_list<Position> cells)
