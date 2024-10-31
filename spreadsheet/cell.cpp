@@ -17,7 +17,7 @@ void Cell::Set(std::string text) {
     if (text.empty()) {
         impl_ = std::make_unique<EmptyImpl>();
     }
-    else if (text[0] == '=' && text.size() > 1) {
+    else if (text[0] == FORMULA_SIGN && text.size() > 1) {
         impl_ = std::make_unique<FormulaImpl>(std::move(text), sheet_);
         referenced_cells_ = dynamic_cast<FormulaImpl*>(impl_.get())->GetReferencedCells();
         for (auto pos : referenced_cells_) {
@@ -35,7 +35,6 @@ void Cell::Clear() {
     InvalidateCache();
     impl_ = std::make_unique<EmptyImpl>();
     referenced_cells_.clear();
-    // dependent cells ?
 }
 
 Cell::Value Cell::GetValue() const {
@@ -62,7 +61,7 @@ Cell::TextImpl::TextImpl(std::string text) {
 }
 
 CellInterface::Value Cell::TextImpl::GetValue() const {
-    if (text_[0] == '\'') {
+    if (text_[0] == ESCAPE_SIGN) {
         return text_.substr(1, text_.size() - 1);
     }
     try {
@@ -94,7 +93,8 @@ CellInterface::Value Cell::FormulaImpl::GetValue() const {
 }
 
 std::string Cell::FormulaImpl::GetText() const {
-    std::string result = "=";
+    std::string result = "";
+    result.push_back(FORMULA_SIGN);
     return result.append(formula_->GetExpression());
 }
 

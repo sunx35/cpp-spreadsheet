@@ -16,21 +16,15 @@ void Sheet::SetCell(Position pos, std::string text) {
     if (!pos.IsValid()) {
         throw InvalidPositionException("Invalid position");
     }
+    std::unique_ptr<Cell> cell = std::make_unique<Cell>(*this);
+    cell->Set(text);
+    if (cell->HasCyclicDependencies(dynamic_cast<Cell*>(GetCell(pos)), cell->GetReferencedCells())) {
+        throw CircularDependencyException("Circular dependency");
+    }
     if (!GetCell(pos)) {
-        std::unique_ptr<Cell> cell = std::make_unique<Cell>(*this);
-        cell->Set(text);
-        if (cell->HasCyclicDependencies(dynamic_cast<Cell*>(GetCell(pos)), cell->GetReferencedCells())) {
-            throw CircularDependencyException("Circular dependency");
-        }
         cells_.insert({pos, std::move(cell)});
     }
     else {
-        // нужно проверить на цикличность еще до изменения ячейки.
-        auto temp_cell = std::make_unique<Cell>(*this);
-        temp_cell->Set(text);
-        if (temp_cell->HasCyclicDependencies(dynamic_cast<Cell*>(GetCell(pos)), temp_cell->GetReferencedCells())) {
-            throw CircularDependencyException("Circular dependency");
-        }
         dynamic_cast<Cell*>(GetCell(pos))->Clear();
         dynamic_cast<Cell*>(GetCell(pos))->Set(text);
     }
@@ -47,13 +41,7 @@ const CellInterface* Sheet::GetCell(Position pos) const {
 }
 
 CellInterface* Sheet::GetCell(Position pos) {
-    if (!pos.IsValid()) {
-        throw InvalidPositionException("Invalid position");
-    }
-    if (!cells_.count(pos)) {
-        return nullptr;
-    }
-    return cells_.at(pos).get();
+    return const_cast<CellInterface*>(static_cast<const Sheet&>(*this).GetCell(pos));
 }
 
 void Sheet::ClearCell(Position pos) {
@@ -97,7 +85,7 @@ void Sheet::PrintCellValueToOutput(const CellInterface* cell, std::ostream& outp
     }
 }
 
-void Sheet::PrintValues(std::ostream& output) const {
+void Sheet::PrintValueOrText(bool IsValue, std::ostream& output) const {
     for (int i = 0; i < GetPrintableSize().rows; ++i) {
         bool first = true;
         for (int j = 0; j < GetPrintableSize().cols; ++j) {
@@ -106,28 +94,24 @@ void Sheet::PrintValues(std::ostream& output) const {
             }
             first = false;
             if (auto cell = GetCell(Position{i, j})) {
-                PrintCellValueToOutput(cell, output);
+                if (IsValue) {
+                    PrintCellValueToOutput(cell, output);
+                }
+                else {
+                    output << cell->GetText();
+                }
             }
             // else -> print nothing (except \t).
         }
         output << '\n';
     }
 }
+
+void Sheet::PrintValues(std::ostream& output) const {
+    PrintValueOrText(true, output);
+}
 void Sheet::PrintTexts(std::ostream& output) const {
-    for (int i = 0; i < GetPrintableSize().rows; ++i) {
-        bool first = true;
-        for (int j = 0; j < GetPrintableSize().cols; ++j) {
-            if (!first) {
-                output << '\t';
-            }
-            first = false;
-            if (auto cell = GetCell(Position{i, j})) {
-                output << cell->GetText();
-            }
-            // else -> print nothing (except \t).
-        }
-        output << '\n';
-    }
+    PrintValueOrText(false, output);
 }
 
 std::unique_ptr<SheetInterface> CreateSheet() {

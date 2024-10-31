@@ -9,6 +9,10 @@
 
 using namespace std::literals;
 
+static const std::string FORMULA_ERROR_MESSAGE_ARITHM = "#ARITHM!";
+static const std::string FORMULA_ERROR_MESSAGE_REF = "#REF!";
+static const std::string FORMULA_ERROR_MESSAGE_VALUE = "#VALUE!";
+
 FormulaError::FormulaError(Category category) 
     : category_(category) {
 }
@@ -24,11 +28,11 @@ bool FormulaError::operator==(FormulaError rhs) const {
 std::string_view FormulaError::ToString() const {
     switch (category_) {
         case Category::Arithmetic:
-        return "#ARITHM!";
+        return FORMULA_ERROR_MESSAGE_ARITHM;
         case Category::Ref:
-        return "#REF!";
+        return FORMULA_ERROR_MESSAGE_REF;
         case Category::Value:
-        return "#VALUE!";
+        return FORMULA_ERROR_MESSAGE_VALUE;
         default:
         return "";
     }

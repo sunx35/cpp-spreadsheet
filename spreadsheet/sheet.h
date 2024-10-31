@@ -28,6 +28,7 @@ public:
 private:
 	// Можете дополнить ваш класс нужными полями и методами
     void PrintCellValueToOutput(const CellInterface* cell, std::ostream& output) const;
+    void PrintValueOrText(bool IsValue, std::ostream& output) const;
 
     class PositionHasher {
     public:
